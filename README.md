@@ -33,7 +33,7 @@ For extracting, editing and repacking NieR Replicant and NieR Automata **.bnk** 
 ### nier_WSP_Util.py
 For extracting and repacking NieR Automata **.wsp** files.
 
-Usage: `nier_WSP_Util.py <PCK Path> <OPTIONS>`
+Usage: `nier_WSP_Util.py <WSP Path> <OPTIONS>`
 
 You can also drag a .wsp file onto the program to extract it.
 * `-e <Extract Directory>` Extract WEMs from the WSP to the directory provided. (Optional)
