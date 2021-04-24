@@ -16,7 +16,7 @@ Be aware that .wem files created with Wwise may not always work in game due to r
 ### replicant_PCK_Util.py
 For extracting and repacking NieR Replicant **.pck** files.
 
-Usage: `nier_PCK_Util.py <PCK Path> <OPTIONS>`
+Usage: `replicant_PCK_Util.py <PCK Path> <OPTIONS>`
 
 You can also drag a .pck file onto the program to extract it.
 * `-e <Extract Directory>` Extract WEMs or BNKs from the PCK to the directory provided. (Optional)
