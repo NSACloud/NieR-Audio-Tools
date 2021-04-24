@@ -12,6 +12,7 @@ If you want to create new .wem files, you need to use **[Wwise](https://www.audi
 
 Be aware that .wem files created with Wwise may not always work in game due to required data being missing from the .wem file.
 
+**Be sure to back up files before you replace them.**
 ## Tools
 ### replicant_PCK_Util.py
 For extracting and repacking NieR Replicant **.pck** files.
