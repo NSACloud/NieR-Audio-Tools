@@ -15,16 +15,28 @@ Be aware that .wem files created with Wwise may not always work in game due to r
 **Be sure to back up files before you replace them.**
 ## Tools
 ### replicant_PCK_Util.py
+
+*V2 - 5/9/2021*
+
 For extracting and repacking NieR Replicant **.pck** files.
 
 Usage: `replicant_PCK_Util.py <PCK Path> <OPTIONS>`
 
 You can also drag a .pck file onto the program to extract it.
+
+**Be sure that you have SoundNames_replicant.csv in the same directory as the program.**
 * `-e <Extract Directory>` Extract WEMs or BNKs from the PCK to the directory provided. (Optional)
 * `-r <Repack Directory>` Repack the PCK with WEMs or BNKs at the directory provided. (Optional)
 * `-x <Export Directory>` Export the repacked PCK to the directory provided. The repack directory (-r) option must be used. (Optional)
 
 Example Command: `replicant_PCK_Util.py stream2.pck -r stream2_extract\repack`
+
+**V2 Changes:**
+
+* Extracted sounds will now have their event names attached to them if they are known.
+* Extraction is now separated by language folders.
+* Reduced printing for faster extraction.
+* Repacking now searches all subdirectories.
 
 ### nier_BNK_Util.py
 For extracting, editing and repacking NieR Replicant and NieR Automata **.bnk** files.
@@ -46,3 +58,9 @@ You can also drag a .wsp file onto the program to extract it.
 If you are able to get a custom .wem file in a .wsp to work, let me know.
 
 Example Command: `nier_WSP_Util.py BGM_0_005.wsp -e testdirectory`
+
+## Credits
+
+Thank you to:
+* **[bnnm](https://github.com/bnnm)** - For wwiser tool and help with wwise event names.
+* **[Silvris](https://github.com/Silvris)** - Help with random wwise questions
