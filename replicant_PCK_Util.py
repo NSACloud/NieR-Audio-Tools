@@ -1,6 +1,17 @@
 #Author: NSA Cloud
 
-#V2
+#V3
+
+#Changes in V3:
+
+#Rewritten PCK structure to be faster and more accurate
+#BNKs now extract with names
+#Repacking is now done via ID instead of index.
+#Removed index numbers from WEMs and moved WEM ID to end of file name
+#Performance improvements - stream.pck extract time from ~15 seconds to ~4.5 seconds
+
+#NOTE: If you are updating from V1 or V2, you cannot repack with WEMs extracted from those versions.
+#Run "update_OLD_WEMNames_replicant.py" on the repack directory to fix the old file names and to be able to use them
 
 #Changes in V2:
 
@@ -11,13 +22,14 @@
 
 #This is not intended to be the most efficiently written program. There are many things that could be done better.
 #All audio tools will be rewritten and incorporated into a single tool at some point.
+import time
+start_time = time.time()
 import os
-import io
-import struct
 import getopt
 import sys
-import csv
 
+from modules.pck import extractPCKFile,repackPCKFile
+from modules.gen_functions import textColors,raiseError
 #-----General Functions-----#
 os.system("color")#Enable console colors
 class textColors:
@@ -30,373 +42,8 @@ class textColors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'     
-# read unsigned byte from file
-def read_byte(file_object, endian = '<'):
-     data = struct.unpack(endian+'B', file_object.read(1))[0]
-     return data
-
- # read signed short from file
-def read_short(file_object, endian = '<'):
-     data = struct.unpack(endian+'h', file_object.read(2))[0]
-     return data
-  # read unsigned short from file
-def read_ushort(file_object, endian = '<'):
-     data = struct.unpack(endian+'H', file_object.read(2))[0]
-     return data
-
- # read unsigned integer from file
-def read_uint(file_object, endian = '<'):
-     data = struct.unpack(endian+'I', file_object.read(4))[0]
-     return data
-
- # read signed integer from file
-def read_int(file_object, endian = '<'):
-     data = struct.unpack(endian+'i', file_object.read(4))[0]
-     return data
-
- # read floating point number from file
-def read_float(file_object, endian = '<'):
-     data = struct.unpack(endian+'f', file_object.read(4))[0]
-     return data
- #read null terminated string from file
-def read_string(file_object, endian = '<'):
-     data =''.join(iter(lambda: file_object.read(1).decode('ascii'), '\x00'))
-     return data
-
-# write unsigned byte to file
-def write_byte(file_object,input, endian = '<'):
-     data = struct.pack(endian+'B', input)
-     file_object.write(data)
-
- # write signed short to file
-def write_short(file_object,input, endian = '<'):
-     data = struct.pack(endian+'h', input)
-     file_object.write(data)
-     
- # write unsigned short to file
-def write_ushort(file_object,input, endian = '<'):
-     data = struct.pack(endian+'H', input)
-     file_object.write(data)
-
- # write unsigned integer to file
-def write_uint(file_object,input, endian = '<'):
-     data = struct.pack(endian+'I', input)
-     file_object.write(data)
 
 
- # write signed integer to file
-def write_int(file_object,input, endian = '<'):
-     data = struct.pack(endian+'i', input)
-     file_object.write(data)
-
- # write floating point number to file
-def write_float(file_object,input, endian = '<'):
-     data = struct.pack(endian+'f', input)
-     file_object.write(data)
- #write null terminated string to file
-def write_string(file_object,input):
-     input += '\x00'
-     data = bytes(input, 'utf-8')
-     file_object.write(data)
-def getPaddingAmount(currentPos,alignment):
-    padding = (currentPos*-1)%alignment
-    return padding
-def raiseError(error):
-     raise Exception(textColors.FAIL + "ERROR: " + error + textColors.ENDC)
-
-def raiseWarning(warning):
-     print(textColors.WARNING + "WARNING: " + warning + textColors.ENDC)
-
-#-----PCK import functions-----#
-def readWEMNameList(filepath):
-    WEMDict = {}
-    if os.path.exists(filepath)and os.path.isfile(filepath) and filepath.endswith(".csv"):
-        print("Reading SoundNames_replicant.csv...")
-        with open(filepath) as csvfile:
-            csvread = csv.reader(csvfile)
-            next(csvread)#skip header line of csv
-            for i, row in enumerate (csvread):
-                wemID = int(row[0])
-                wemName = row[1]
-                WEMDict.update({wemID:wemName})
-    else:
-        raiseWarning("SoundNames_replicant.csv not found. WEMs will not use their internal names.")
-    return WEMDict
-
-
-def readPCKHeader(file):
-    Header = {}
-    Header["FileType"] = file.read(4)
-     
-    if Header["FileType"] != b'AKPK':
-         raiseError("File is not a PCK file.")
-    Header["wemDataOffset"] = read_uint(file)
-    Header["unkn0"] = read_uint(file)
-    Header["unkn1"] = read_uint(file)
-    Header["unkn2"] = read_uint(file)
-    Header["mediaIndexLength"] = read_uint(file)
-    Header["unkn3"] = read_uint(file)
-    Header["unkn4"] = read_uint(file)
-    Header["unkn5"] = read_uint(file)
-    Header["unkn6"] = read_uint(file)
-    Header["unkn7"] = read_uint(file)
-    Header["unkn8"] = read_uint(file)
-    Header["unkn9"] = read_uint(file)
-    Header["null0"] = file.read(3)
-    Header["soundDirs"] = file.read(59)#These directories shouldn't change
-    Header["null1"] = file.read(2)
-    Header["bnkCount"] = read_uint(file)
-    return Header
-def readPCKMediaIndex(file):
-    MediaIndex = {}
-    MediaIndex["wemCount"] = read_uint(file)
-    mediaIndexEntryList = []
-    for i in range(0,MediaIndex["wemCount"]):
-        entry = {}
-        entry["wemID"] = read_uint(file)
-        entry["unkn0"] = read_uint(file)
-        entry["wemFileSize"] = read_uint(file)
-        entry["wemOffset"] = read_uint(file)
-        entry["langID"] = read_uint(file)
-        mediaIndexEntryList.append(entry)
-    MediaIndex["mediaIndexEntryList"] = mediaIndexEntryList
-    MediaIndex["null"] = file.read(4)
-    return MediaIndex
-    
-def readPCKBNKIndex(file,bnkCount):
-    bnkIndex = {}
-    bnkIndexList = []
-    for i in range(0,bnkCount):
-        entry = {}
-        entry["bnkID"] = read_uint(file)
-        entry["unkn1"] = read_uint(file)
-        entry["bnkSize"] = read_uint(file)
-        entry["bnkOffset"] = read_uint(file)
-        entry["langID"] = read_uint(file)
-        bnkIndexList.append(entry)
-    bnkIndex["bnkIndexList"]= bnkIndexList
-    bnkIndex["null"] = file.read(8)
-    return bnkIndex
-def readPCK(filepath):
-    print(textColors.OKCYAN + "__________________________________\nPCK import started." + textColors.ENDC)
-    print("Opening "+filepath)
-    file = open(filepath,"rb")
-    print("Reading PCK...")
-    PCK = {}
-    PCK["FileName"] = os.path.basename(filepath)#Get file name
-    PCK["EOF"] = os.fstat(file.fileno()).st_size#Get file size
-    PCK["MediaIndex"] = None#Set default value in the case that PCK doesn't have media index
-    PCK["WEMList"] = None#Set default value in the case that PCK doesn't have media index
-    PCK["BNKList"] = None#Set default value in the case that PCK doesn't have bnk index
-    PCK["Header"] = readPCKHeader(file)
-    if PCK["Header"]["bnkCount"] != 0:
-        PCK["BNKList"] = []
-        PCK["BNKIndex"] = readPCKBNKIndex(file, PCK["Header"]["bnkCount"])
-        for i in range(0,PCK["Header"]["bnkCount"]):
-            file.seek(PCK["BNKIndex"]["bnkIndexList"][i]["bnkOffset"])
-            PCK["BNKList"].append(readBNK(file,PCK["BNKIndex"]["bnkIndexList"][i]["bnkSize"]))
-    else:
-        PCK["MediaIndex"] = readPCKMediaIndex(file)
-        PCK["WEMList"] = []
-        for i in range(0,PCK["MediaIndex"]["wemCount"]):
-            PCK["WEMList"].append(readWEM(file,PCK["EOF"]))
-    print(textColors.OKGREEN + "__________________________________\nPCK import finished.\n" + textColors.ENDC)
-    return PCK
-def readBNK(file,eof):
-    BNK = {}
-    BNK["FileType"] = file.read(4)
-    if BNK["FileType"] != b'BKHD':
-        raiseError("Failed during reading BNK.")
-    file.seek(file.tell()-4)
-    BNK["data"] = file.read(eof)#Might change this to fully parse bnk at some point
-    return BNK
-def readWEM(file,eof):#Returns WEM as a dictionary
-    #print("Current Pos: "+ str(file.tell()))
-    #print("Reading WEM...")
-    WEM = {}
-    
-    WEM["FileType"] = file.read(4)
-    if WEM["FileType"] != b'RIFF':
-        raiseError("Failed during reading WEM.")
-   
-    WEM["fileSize"] = read_uint(file)
-    WEM["data"] = file.read(WEM["fileSize"])
-    WEM["padding"] = file.read(getWEMPadding(file,eof))
-    return WEM
-
-def getWEMPadding(file, eof):
-    #print("Reading WEM padding...")
-    if file.tell() == eof:
-            return 0;
-    startPos = file.tell()
-    paddingSize = 0
-    while read_byte(file) == 0:
-        paddingSize += 1
-        if file.tell() == eof:
-            break;
-    file.seek(startPos)
-    #print("Padding Amount: " + str(paddingSize))
-    return paddingSize       
-
-
-#-----PCK extract functions-----#
-def extractWEMs(PCK,outputDir):#extract wems and bnks function should be merged since they're effectively the same process
-    langPath = ["sfx","english(us)","japanese(jp)"]
-    WEMDict = readWEMNameList("SoundNames_replicant.csv")
-    print("Extracting WEMs...")
-    for index, wem in enumerate(PCK["WEMList"]):
-        #print("Extracting WEM "+str(index))
-        if PCK["MediaIndex"]["mediaIndexEntryList"][index]["wemID"] in WEMDict:
-            WEMName = "-"+WEMDict[PCK["MediaIndex"]["mediaIndexEntryList"][index]["wemID"]]
-        else:
-            WEMName = ""
-        file = open(os.path.join(outputDir,langPath[PCK["MediaIndex"]["mediaIndexEntryList"][index]["langID"]],str(index)+"-"+str(PCK["MediaIndex"]["mediaIndexEntryList"][index]["wemID"])+WEMName+".wem"), "wb")
-        file.write(b"RIFF")
-        write_uint(file, PCK["WEMList"][index]["fileSize"])
-        file.write(PCK["WEMList"][index]["data"])
-        file.write(PCK["WEMList"][index]["padding"])
-        file.close()
-
-def extractBNKs(PCK,outputDir):
-    langPath = ["sfx","english(us)","japanese(jp)"]
-    print("Extracting BNKs...")
-    for index, wem in enumerate(PCK["BNKList"]):
-        print("Extracting BNK "+str(index))
-        file = open(os.path.join(outputDir,langPath[PCK["BNKIndex"]["bnkIndexList"][index]["langID"]],str(index)+"-"+str(PCK["BNKIndex"]["bnkIndexList"][index]["bnkID"])+".bnk"), "wb")
-        file.write(PCK["BNKList"][index]["data"])
-        file.close()        
-#-----PCK export functions-----#
-def readNewWEMs(inputDir,wemCount):#Reads wems to repack into PCK
-    NewWEMList = []
-    for root, dirs, filenames in os.walk(inputDir):
-        for fileName in filenames:
-            if fileName.endswith(".wem"):           
-                print ("Reading new WEM: "+os.path.join(root,fileName))
-                file = open(os.path.join(root,fileName),"rb")
-                eof = os.fstat(file.fileno()).st_size
-                NewWEM = readWEM(file,eof)            
-                file.close()
-                NewWEM["Index"] = int((os.path.splitext(fileName)[0]).split('-')[0])#Splits index from WEM ID and extension
-                if NewWEM["Index"] > wemCount:
-                    raiseError("WEM index exceeds the amount of WEMs in the PCK. \nCheck that you're repacking to the correct file.")
-                NewWEMList.append(NewWEM)
-    return NewWEMList
-
-def readNewBNKs(inputDir,bnkCount):#Reads wems to repack into PCK
-    NewBNKList = []
-    for root, dirs, filenames in os.walk(inputDir):
-        for fileName in filenames:
-            if fileName.endswith(".bnk"):           
-                print ("Reading new BNK: "+os.path.join(root,fileName))
-                file = open(os.path.join(root,fileName),"rb")
-                eof = os.fstat(file.fileno()).st_size
-                NewBNK = readBNK(file,eof)            
-                file.close()
-                NewBNK["Index"] = int((os.path.splitext(fileName)[0]).split('-')[0])#Splits index from BNK ID and extension
-                NewBNK["fileSize"] = eof
-                if NewBNK["Index"] > bnkCount:
-                    raiseError("BNK index exceeds the amount of BNKs in the PCK. \nCheck that you're repacking to the correct file.")
-                NewBNKList.append(NewBNK)
-    return NewBNKList  
-def updateWEMIndexOffsets(mediaIndexEntryList,offset,difference):
-    for entry in mediaIndexEntryList:
-        if entry["wemOffset"] > offset:
-            entry["wemOffset"] += difference
-    return mediaIndexEntryList    
-def updateBNKIndexOffsets(bnkIndexList,offset,difference):
-    for entry in bnkIndexList:
-        if entry["bnkOffset"] > offset:
-            entry["bnkOffset"] += difference
-    return bnkIndexList
-def writePCKHeader(file,PCKHEADER):
-    file.write(b"AKPK")
-    write_uint(file,PCKHEADER["wemDataOffset"])
-    write_uint(file,PCKHEADER["unkn0"])
-    write_uint(file,PCKHEADER["unkn1"])
-    write_uint(file,PCKHEADER["unkn2"])
-    write_uint(file,PCKHEADER["mediaIndexLength"])
-    write_uint(file,PCKHEADER["unkn3"])
-    write_uint(file,PCKHEADER["unkn4"])
-    write_uint(file,PCKHEADER["unkn5"])
-    write_uint(file,PCKHEADER["unkn6"])
-    write_uint(file,PCKHEADER["unkn7"])
-    write_uint(file,PCKHEADER["unkn8"])
-    write_uint(file,PCKHEADER["unkn9"])
-    file.write(PCKHEADER["null0"])
-    file.write(PCKHEADER["soundDirs"])
-    file.write(PCKHEADER["null1"])
-    write_uint(file,PCKHEADER["bnkCount"])
-def repackPCK(PCK, inputDir,exportDir):#Edits the currently imported PCK
-    if PCK["Header"]["bnkCount"] != 0:
-        NewBNKList = readNewBNKs(inputDir,PCK["Header"]["bnkCount"])
-        if NewBNKList == []:
-            raiseError("No BNK files were in the repack directory.")
-        for BNK in NewBNKList:
-            print("Replacing BNK " + str(BNK["Index"])+ " in PCK")
-            PCK["BNKList"][BNK["Index"]] = BNK#Replace each BNK in the PCK with the ones from the repack directory.
-            size_difference = BNK["fileSize"] - PCK["BNKIndex"]["bnkIndexList"][BNK["Index"]]["bnkSize"]
-            print ("BNK "+ str(BNK["Index"])+" size difference: "+str(size_difference))
-            PCK["BNKIndex"]["bnkIndexList"][BNK["Index"]]["bnkSize"] = BNK["fileSize"]
-            PCK["BNKIndex"]["bnkIndexList"] = updateBNKIndexOffsets(PCK["BNKIndex"]["bnkIndexList"],PCK["BNKIndex"]["bnkIndexList"][BNK["Index"]]["bnkOffset"],size_difference)
-        file = open(os.path.join(exportDir,PCK["FileName"]), "wb")
-        writePCKHeader(file,PCK["Header"])
-        for entry in PCK["BNKIndex"]["bnkIndexList"]:
-            write_uint(file,entry["bnkID"])
-            write_uint(file,entry["unkn1"])
-            write_uint(file,entry["bnkSize"])
-            write_uint(file,entry["bnkOffset"])
-            write_uint(file,entry["langID"])
-        file.write(PCK["BNKIndex"]["null"])
-        for index, entry in enumerate(PCK["BNKIndex"]["bnkIndexList"]):    
-            file.seek(entry["bnkOffset"])
-            file.write(PCK["BNKList"][index]["data"])
-        file.close()
-    else:
-        NewWEMList = readNewWEMs(inputDir,PCK["MediaIndex"]["wemCount"])
-        if NewWEMList == []:
-            raiseError("No WEM files were in the repack directory.")
-        for WEM in NewWEMList:
-            print("Replacing WEM " + str(WEM["Index"])+ " in PCK")
-            PCK["WEMList"][WEM["Index"]] = WEM#Replace each WEM in the PCK with the ones from the repack directory.
-            size_difference = WEM["fileSize"] - PCK["MediaIndex"]["mediaIndexEntryList"][WEM["Index"]]["wemFileSize"]+8#+8 to account for wem header
-            print ("WEM "+ str(WEM["Index"])+" size difference: "+str(size_difference))#NOTE: Uses WEM's reported size
-            PCK["MediaIndex"]["mediaIndexEntryList"][WEM["Index"]]["wemFileSize"] = WEM["fileSize"]+8
-            PCK["MediaIndex"]["mediaIndexEntryList"] = updateWEMIndexOffsets(PCK["MediaIndex"]["mediaIndexEntryList"],PCK["MediaIndex"]["mediaIndexEntryList"][WEM["Index"]]["wemOffset"],size_difference)
-            
-        file = open(os.path.join(exportDir,PCK["FileName"]), "wb")
-        writePCKHeader(file,PCK["Header"])
-        write_uint(file,PCK["MediaIndex"]["wemCount"])
-        for entry in PCK["MediaIndex"]["mediaIndexEntryList"]:
-            write_uint(file,entry["wemID"])
-            write_uint(file,entry["unkn0"])
-            write_uint(file,entry["wemFileSize"])
-            write_uint(file,entry["wemOffset"])
-            write_uint(file,entry["langID"])
-        file.write(PCK["MediaIndex"]["null"])
-        for index, entry in enumerate(PCK["MediaIndex"]["mediaIndexEntryList"]):    
-            file.seek(entry["wemOffset"])
-            file.write(b"RIFF")           
-            write_uint(file,PCK["WEMList"][index]["fileSize"])
-            file.write(PCK["WEMList"][index]["data"])
-        file.close()
-#-----PCK file functions-----#
-def extractPCKFile(SOURCEFILE,OUTPUTDIR):
-    PCK = readPCK(SOURCEFILE)
-    if PCK["Header"]["bnkCount"] != 0:
-        print(textColors.OKCYAN + "__________________________________\nBNK extract started." + textColors.ENDC)
-        extractBNKs(PCK,OUTPUTDIR)
-        print(textColors.OKGREEN + "__________________________________\nFinished extracting BNKs to "+ OUTPUTDIR + textColors.ENDC)
-        
-    else:
-        print(textColors.OKCYAN + "__________________________________\nWEM extract started." + textColors.ENDC)
-        extractWEMs(PCK,OUTPUTDIR)
-        print(textColors.OKGREEN + "__________________________________\nFinished extracting WEMs to "+ OUTPUTDIR + textColors.ENDC)
-
-def repackPCKFile(SOURCEFILE,INPUTDIR,EXPORTDIR):
-    PCK = readPCK(SOURCEFILE)
-    print(textColors.OKCYAN + "__________________________________\nRepacking PCK." + textColors.ENDC)
-    repackPCK(PCK,INPUTDIR,EXPORTDIR)
-    print(textColors.OKGREEN + "__________________________________\nSaved PCK to " +EXPORTDIR + textColors.ENDC)
 #-----MAIN-----#
 
 def displayHelp():
@@ -416,7 +63,7 @@ def displayHelp():
     print("\nWEM files can be played and converted to other formats using foobar2000 with the vgmstream plugin.")
     print("https://www.foobar2000.org/download\nhttps://www.foobar2000.org/components/view/foo_input_vgmstream")
 
-print(textColors.BOLD + "__________________________________\nNieR Replicant PCK Utility V2" + textColors.ENDC)
+print(textColors.BOLD + "__________________________________\nNieR Replicant PCK Utility V3" + textColors.ENDC)
 print("https://github.com/NSACloud/NieR-Audio-Tools\n")
 
 #Defaults
@@ -468,17 +115,7 @@ except getopt.error as err:
 
     
 if OPERATION == "unpack":
-    try:
-        langPath = ["sfx","english(us)","japanese(jp)"]
-        for lang in langPath:
-            os.makedirs(os.path.join(OUTPUTDIR,lang))
-        
-    except:
-        pass
     extractPCKFile(SOURCEFILE,OUTPUTDIR)
 elif OPERATION == "repack":
-    try:
-        os.makedirs(EXPORTDIR)
-    except:
-        pass
     repackPCKFile(SOURCEFILE,INPUTDIR,EXPORTDIR)
+print("Execution Time: %.2f seconds" % (time.time() - start_time))
